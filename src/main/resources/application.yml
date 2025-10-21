@@ -1,0 +1,173 @@
+# ============================================
+# Spring Boot Configuration for StudyBuddy
+# ============================================
+# This file configures how your application runs
+# Key sections: Server, Database, JPA, Flyway, Actuator
+
+spring:
+  application:
+    # Application name - shows up in logs and monitoring tools
+    name: studybuddy
+
+  # ============================================
+  # DATABASE CONFIGURATION
+  # ============================================
+  # How to connect to PostgreSQL database
+  datasource:
+    # JDBC URL format: jdbc:postgresql://host:port/database
+    # ${ENV_VAR:default} means: use environment variable if exists, otherwise use default
+    # Why? Allows different configs for local/docker/kubernetes without changing code!
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:studybuddy}
+    username: ${DB_USER:studybuddy}
+    password: ${DB_PASSWORD:studybuddy123}
+    driver-class-name: org.postgresql.Driver
+
+    # Connection Pool Settings (HikariCP - fastest connection pool)
+    # Think of it like a "waiting room" for database connections
+    hikari:
+      # Maximum number of connections in the pool
+      # Too many = waste memory, Too few = slow performance
+      maximum-pool-size: 10
+      # Minimum idle connections kept ready
+      minimum-idle: 5
+      # How long to wait for a connection before timing out (30 seconds)
+      connection-timeout: 30000
+      # Maximum lifetime of a connection (30 minutes)
+      max-lifetime: 1800000
+
+  # ============================================
+  # JPA / HIBERNATE CONFIGURATION
+  # ============================================
+  # JPA = Java Persistence API (ORM layer)
+  # Hibernate = Implementation of JPA
+  jpa:
+    # Show SQL queries in console (useful for learning/debugging!)
+    # Set to false in production for performance
+    show-sql: true
+
+    # Format SQL queries to be readable (pretty print)
+    properties:
+      hibernate:
+        format_sql: true
+        # Dialect tells Hibernate which SQL variant to use (PostgreSQL specific features)
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        # Store dates/times in UTC timezone in database
+        # Why UTC? Avoids timezone confusion when users are in different countries
+        jdbc:
+          time_zone: UTC
+
+    # DDL auto mode - How Hibernate handles database schema
+    # validate = Check if schema matches entities, but don't modify database
+    # Why validate? Because we use Flyway to manage schema (one source of truth!)
+    # Other options:
+    #   - create: Drop and recreate tables every restart (DANGEROUS!)
+    #   - update: Try to update schema automatically (can cause issues)
+    #   - none: Do nothing
+    hibernate:
+      ddl-auto: validate
+
+  # ============================================
+  # FLYWAY CONFIGURATION
+  # ============================================
+  # Flyway = Database migration tool (version control for database)
+  flyway:
+    # Enable Flyway
+    enabled: true
+    # Location of SQL migration files
+    # Convention: V1__description.sql, V2__description.sql, etc.
+    locations: classpath:db/migration
+    # Baseline version (starting point)
+    baseline-on-migrate: true
+    baseline-version: 0
+    # Validate migrations on startup (detect if someone manually changed database)
+    validate-on-migrate: true
+
+# ============================================
+# SERVER CONFIGURATION
+# ============================================
+server:
+  # Port the application listens on
+  # 8080 is default for Spring Boot
+  port: 8080
+
+  # Servlet context path - API root path
+  # Empty means root, but we'll use /api/v1 in controllers
+  servlet:
+    context-path: /
+
+  # Graceful shutdown - Important for Kubernetes!
+  # When pod is terminating, finish existing requests before shutting down
+  shutdown: graceful
+
+# ============================================
+# ACTUATOR CONFIGURATION
+# ============================================
+# Actuator provides production-ready features (health checks, metrics)
+management:
+  endpoints:
+    web:
+      # Base path for actuator endpoints
+      base-path: /actuator
+      exposure:
+        # Which endpoints to expose
+        # health = liveness/readiness probes for Kubernetes
+        # metrics = CPU, memory, request counts
+        # info = application info
+        include: health,metrics,info
+
+  endpoint:
+    health:
+      # Show detailed health information
+      # UP/DOWN status for database, disk space, etc.
+      show-details: always
+
+      # Separate liveness and readiness probes
+      # Liveness: Is app running? (if not, restart container)
+      # Readiness: Can app handle traffic? (if not, remove from load balancer)
+      probes:
+        enabled: true
+
+  # Metrics configuration
+  metrics:
+    export:
+      # Simple metrics exporter (in-memory)
+      # For production, you'd use Prometheus
+      simple:
+        enabled: true
+
+# ============================================
+# LOGGING CONFIGURATION
+# ============================================
+logging:
+  level:
+    # Root logger level (applies to all packages)
+    root: INFO
+    # Our application logs at DEBUG level (see more details)
+    com.example.studybuddy: DEBUG
+    # Hibernate SQL logs
+    org.hibernate.SQL: DEBUG
+    # Show values bound to SQL parameters (?, ?, ?)
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    # Spring Framework
+    org.springframework.web: INFO
+    # Reduce Flyway verbosity
+    org.flywaydb: INFO
+
+  # Log pattern format
+  pattern:
+    # %d = timestamp, %thread = thread name, %-5level = log level (padded)
+    # %logger{36} = logger name (max 36 chars), %msg = message, %n = newline
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %thread - %-5level %logger{36} - %msg%n"
+
+# ============================================
+# CUSTOM APPLICATION PROPERTIES
+# ============================================
+# You can add your own properties here
+studybuddy:
+  # API version
+  api:
+    version: v1
+
+  # Feature flags (toggle features on/off)
+  features:
+    reminder-enabled: false  # Not implemented yet
