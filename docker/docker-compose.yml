@@ -1,0 +1,335 @@
+# ==================================================
+# Docker Compose Configuration for StudyBuddy
+# ==================================================
+# Purpose: Run multiple containers together as a service
+# - PostgreSQL database
+# - Spring Boot application
+#
+# WHAT IS DOCKER COMPOSE?
+# =======================
+# Tool for defining and running multi-container apps
+# Alternative: Running each container manually (tedious!)
+# docker run postgres ...
+# docker run studybuddy ...
+# docker network create ...
+# docker network connect ...
+#
+# With Compose: One command!
+# docker compose up
+
+version: '3.8'
+
+# Version 3.8 = Docker Compose file format version
+# Different versions support different features
+# 3.8 is stable and widely supported
+
+# ==================================================
+# SERVICES
+# ==================================================
+# Services = Containers that work together
+# Each service can have multiple instances (replicas)
+
+services:
+
+  # ==================================================
+  # DATABASE SERVICE (PostgreSQL)
+  # ==================================================
+  db:
+    # Service name: "db"
+    # Can be referenced by other services: jdbc:postgresql://db:5432/
+
+    # IMAGE:
+    # Use official PostgreSQL image from Docker Hub
+    # postgres:15-alpine = PostgreSQL 15 on Alpine Linux
+    # Why alpine? Smaller image (~80MB vs ~200MB)
+    image: postgres:15-alpine
+
+    # CONTAINER NAME:
+    # Custom name for the container (optional)
+    # Without this: Docker generates random name like "studybuddy_db_1"
+    container_name: studybuddy-db
+
+    # RESTART POLICY:
+    # What to do if container stops/crashes?
+    # - no: Don't restart (default)
+    # - always: Always restart
+    # - on-failure: Restart only if exits with error code
+    # - unless-stopped: Restart unless manually stopped
+    restart: unless-stopped
+
+    # ENVIRONMENT VARIABLES:
+    # Configure PostgreSQL via env vars
+    environment:
+      # PostgreSQL superuser password (REQUIRED!)
+      # WARNING: Hardcoded password is OK for local dev
+      # NEVER do this in production! Use secrets instead
+      POSTGRES_PASSWORD: studybuddy123
+
+      # Database name to create automatically
+      # If not set, uses username as database name
+      POSTGRES_DB: studybuddy
+
+      # PostgreSQL username
+      # Default: postgres (if not specified)
+      POSTGRES_USER: studybuddy
+
+      # Timezone (optional, good practice)
+      TZ: UTC
+
+    # PORTS:
+    # Map container port to host port
+    # Format: "HOST:CONTAINER"
+    # 5432:5432 = Map container's 5432 to host's 5432
+    ports:
+      - "5432:5432"
+
+    # Why expose?
+    # - Access from host: psql -h localhost -U studybuddy
+    # - Access from GUI tools (DBeaver, pgAdmin)
+    # - Not needed for app-to-db communication (Docker network handles it)
+
+    # VOLUMES:
+    # Persist data outside container
+    # Without volumes: Data is LOST when container stops!
+    volumes:
+      # Named volume: "postgres_data" maps to /var/lib/postgresql/data
+      # PostgreSQL stores all data in this directory
+      # Named volumes are managed by Docker
+      - postgres_data:/var/lib/postgresql/data
+
+      # Alternative: Bind mount (host directory)
+      # - ./data/postgres:/var/lib/postgresql/data
+      # Pros: Easy to find, easy to backup
+      # Cons: OS-specific paths, permission issues
+
+    # HEALTHCHECK:
+    # Check if PostgreSQL is ready to accept connections
+    # Important for app startup: Wait until DB is ready
+    healthcheck:
+      # pg_isready = PostgreSQL utility to check if server is ready
+      # -U studybuddy = Check as user "studybuddy"
+      test: ["CMD-SHELL", "pg_isready -U studybuddy"]
+      interval: 10s       # Check every 10 seconds
+      timeout: 5s         # Timeout after 5 seconds
+      retries: 5          # Try 5 times before marking unhealthy
+      start_period: 10s   # Grace period (DB needs time to start)
+
+    # NETWORKS:
+    # Docker creates a default network, but explicit is better
+    networks:
+      - studybuddy-network
+
+  # ==================================================
+  # APPLICATION SERVICE (Spring Boot)
+  # ==================================================
+  api:
+    # Service name: "api"
+
+    # BUILD:
+    # Build image from Dockerfile (instead of pulling from registry)
+    build:
+      # Build context: Parent directory (where pom.xml is)
+      context: ..
+      # Dockerfile location (relative to context)
+      dockerfile: docker/Dockerfile
+
+    # IMAGE TAG:
+    # Tag the built image
+    image: studybuddy:0.1.0
+
+    container_name: studybuddy-api
+
+    restart: unless-stopped
+
+    # ENVIRONMENT VARIABLES:
+    # Override application.yml values
+    # Spring Boot: Environment variables override properties files
+    environment:
+      # DATABASE CONNECTION:
+      # DB_HOST=db: "db" is the service name (Docker DNS resolves it)
+      # Why not "localhost"? Each container has its own localhost!
+      # Docker network: Services communicate by service name
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: studybuddy
+      DB_USER: studybuddy
+      DB_PASSWORD: studybuddy123
+
+      # SPRING PROFILES:
+      # Activate different configurations
+      # Example: application-prod.yml for production settings
+      # SPRING_PROFILES_ACTIVE: prod
+
+      # JVM OPTIONS:
+      # Configure Java memory, GC, etc.
+      # JAVA_OPTS: "-Xmx512m -Xms256m"
+
+      # TIMEZONE:
+      TZ: UTC
+
+    # PORTS:
+    # Map container's 8080 to host's 8080
+    ports:
+      - "8080:8080"
+
+    # Access: http://localhost:8080/api/v1/profiles
+
+    # DEPENDS_ON:
+    # Start dependencies first
+    # db must start before api
+    depends_on:
+      db:
+        # condition: Wait until DB is healthy (not just started!)
+        # Without this: App starts before DB is ready → connection errors
+        condition: service_healthy
+
+    # HEALTHCHECK:
+    # Check if Spring Boot app is healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s   # Spring Boot needs time to start (JVM, Spring context, Flyway)
+
+    networks:
+      - studybuddy-network
+
+# ==================================================
+# VOLUMES
+# ==================================================
+# Named volumes: Docker manages storage location
+volumes:
+  postgres_data:
+    # Driver: local filesystem (default)
+    driver: local
+    # Docker stores data in:
+    # Linux: /var/lib/docker/volumes/studybuddy_postgres_data/_data
+    # Mac: ~/Library/Containers/com.docker.docker/Data/vms/0/
+    # Windows: \\wsl$\docker-desktop-data\version-pack-data\community\docker\volumes
+
+# ==================================================
+# NETWORKS
+# ==================================================
+# Custom network for inter-service communication
+networks:
+  studybuddy-network:
+    driver: bridge
+    # Bridge network: Default, services can communicate by name
+
+# Alternative: host network (less isolation, uses host's network stack)
+# Alternative: overlay network (for Docker Swarm multi-host)
+
+# ==================================================
+# USAGE COMMANDS
+# ==================================================
+
+# START SERVICES (foreground):
+# docker compose up
+# - Builds images if needed
+# - Creates containers
+# - Starts containers
+# - Shows logs in terminal (Ctrl+C to stop)
+
+# START SERVICES (background):
+# docker compose up -d
+# -d = Detached mode (runs in background)
+
+# VIEW LOGS:
+# docker compose logs -f
+# -f = Follow (like tail -f)
+# docker compose logs api     # Logs for api service only
+# docker compose logs db      # Logs for db service only
+
+# STOP SERVICES:
+# docker compose stop
+# - Stops containers
+# - Keeps containers (can restart)
+
+# STOP AND REMOVE:
+# docker compose down
+# - Stops containers
+# - Removes containers
+# - Keeps volumes (data persists!)
+
+# REMOVE EVERYTHING (including volumes):
+# docker compose down -v
+# -v = Remove volumes (DATA WILL BE LOST!)
+
+# REBUILD AFTER CODE CHANGES:
+# docker compose up --build
+# --build = Rebuild images even if they exist
+
+# CHECK STATUS:
+# docker compose ps
+# Shows running containers
+
+# EXECUTE COMMAND IN CONTAINER:
+# docker compose exec api sh
+# Opens shell in api container (for debugging)
+
+# docker compose exec db psql -U studybuddy
+# Opens PostgreSQL CLI
+
+# VIEW RESOURCE USAGE:
+# docker compose stats
+# Shows CPU, memory, network usage
+
+# ==================================================
+# DEBUGGING TIPS
+# ==================================================
+
+# Problem: "Cannot connect to database"
+# Solution: Check if DB is healthy
+# docker compose ps
+# docker compose logs db
+
+# Problem: "Port already in use"
+# Solution: Change port mapping
+# ports:
+#   - "8081:8080"  # Use host port 8081 instead
+
+# Problem: "App keeps restarting"
+# Solution: Check app logs
+# docker compose logs -f api
+
+# Problem: "Flyway migration failed"
+# Solution: Reset database
+# docker compose down -v  # Delete volumes
+# docker compose up      # Fresh start
+
+# Problem: "Changes not reflected"
+# Solution: Rebuild image
+# docker compose up --build
+
+# ==================================================
+# PRODUCTION CONSIDERATIONS
+# ==================================================
+
+# 1. SECRETS:
+# Don't hardcode passwords!
+# Use Docker secrets or environment files
+# docker compose --env-file .env.prod up
+
+# 2. RESOURCE LIMITS:
+# Prevent containers from consuming all resources
+# deploy:
+#   resources:
+#     limits:
+#       cpus: '1'
+#       memory: 512M
+
+# 3. SEPARATE DATABASE:
+# In production, use managed database (AWS RDS, etc.)
+# Don't run PostgreSQL in Docker for prod
+
+# 4. HEALTH CHECKS:
+# Always implement health checks for monitoring
+
+# 5. LOGGING:
+# Use logging drivers (JSON, Syslog, etc.)
+# logging:
+#   driver: "json-file"
+#   options:
+#     max-size: "10m"
+#     max-file: "3"

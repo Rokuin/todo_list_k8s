@@ -1,0 +1,163 @@
+# ==================================================
+# .dockerignore
+# ==================================================
+# Purpose: Exclude files from Docker build context
+# Like .gitignore but for Docker
+#
+# WHY?
+# ====
+# When you run "docker build", Docker sends ALL files in context to daemon
+# Without .dockerignore: Sends everything (slow, wastes bandwidth)
+# With .dockerignore: Sends only necessary files (fast!)
+#
+# Example:
+# Without: 500MB context (includes target/, node_modules/, etc.)
+# With: 5MB context (only source code)
+# Result: 100x faster builds!
+
+# ==================================================
+# BUILD ARTIFACTS
+# ==================================================
+# Don't send compiled code to Docker
+# Why? Docker builds from source (mvnw package)
+target/
+build/
+*.jar
+*.war
+*.ear
+
+# ==================================================
+# DEPENDENCIES
+# ==================================================
+# Don't send downloaded dependencies
+# Why? Docker downloads fresh dependencies (mvnw dependency:go-offline)
+.m2/
+.gradle/
+node_modules/
+
+# ==================================================
+# IDE FILES
+# ==================================================
+# IDE-specific files (IntelliJ, Eclipse, VS Code)
+.idea/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ==================================================
+# OS FILES
+# ==================================================
+# Operating system junk files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ==================================================
+# GIT
+# ==================================================
+# Don't send Git history to Docker
+# Why? Wastes space, not needed in container
+.git/
+.gitignore
+.gitattributes
+
+# ==================================================
+# DOCKER FILES
+# ==================================================
+# Don't send Docker files to Docker build
+# (Dockerfile is explicitly referenced with -f flag)
+docker-compose.yml
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# ==================================================
+# LOGS
+# ==================================================
+# Log files shouldn't be in container
+*.log
+logs/
+
+# ==================================================
+# DOCUMENTATION
+# ==================================================
+# README, docs don't need to be in container
+# (They're for developers, not runtime)
+README.md
+README
+*.md
+docs/
+documentation/
+
+# ==================================================
+# KUBERNETES
+# ==================================================
+# K8s manifests don't belong in container
+deploy/
+k8s/
+*.yaml
+*.yml
+
+# Exception: application.yml IS needed!
+# Add it back explicitly if excluded
+!src/main/resources/application.yml
+!src/main/resources/**/*.yml
+
+# ==================================================
+# TEST FILES
+# ==================================================
+# Test code isn't needed in production image
+# Why? We skip tests in Docker build (-DskipTests)
+# Tests run in CI/CD pipeline instead
+src/test/
+
+# ==================================================
+# ENVIRONMENT FILES
+# ==================================================
+# Secrets, environment configs
+.env
+.env.*
+*.pem
+*.key
+
+# ==================================================
+# TEMPORARY FILES
+# ==================================================
+tmp/
+temp/
+*.tmp
+*.temp
+*.cache
+
+# ==================================================
+# CI/CD
+# ==================================================
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# ==================================================
+# SIZE COMPARISON
+# ==================================================
+# Without .dockerignore:
+# Sending build context to Docker daemon: 250MB
+# (includes target/, .git/, .idea/, etc.)
+#
+# With .dockerignore:
+# Sending build context to Docker daemon: 2MB
+# (only src/ and pom.xml)
+#
+# Result: 125x faster context transfer!
+# Especially important in CI/CD pipelines
